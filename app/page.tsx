@@ -21,13 +21,13 @@ export default function Home() {
   return (
     <Guard>
       <h1 className="mb-4 text-2xl font-bold">Training plans</h1>
-      {plans === null && <p className="text-gray-500">Loading plans…</p>}
-      {plans?.length === 0 && <p className="text-gray-500">No plans yet.</p>}
+      {plans === null && <p className="muted">Loading plans…</p>}
+      {plans?.length === 0 && <p className="muted">No plans yet.</p>}
       <div className="space-y-3">
         {plans?.map((p) => (
-          <Link key={p.id} href={`/plans/${p.id}`} className="block rounded border p-4 hover:bg-gray-50">
+          <Link key={p.id} href={`/plans/${p.id}`} className="hover-panel block rounded border line p-4">
             <div className="font-semibold">{p.title}</div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm muted">
               {p.goal_distance.toUpperCase()} · {p.weeks} weeks{p.level ? ` · ${p.level}` : ""}
             </div>
             {p.description && <p className="mt-1 text-sm">{p.description}</p>}

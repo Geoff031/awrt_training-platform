@@ -16,17 +16,17 @@ export default function Guard({ children }: { children: React.ReactNode }) {
     });
   }, [router]);
 
-  if (!ready) return <p className="p-6 text-gray-500">Loading…</p>;
+  if (!ready) return <p className="p-6 muted">Loading…</p>;
 
   return (
     <div className="mx-auto max-w-2xl p-4">
-      <nav className="mb-6 flex items-center justify-between border-b pb-3">
+      <nav className="mb-6 flex items-center justify-between border-b line pb-3">
         <div className="flex gap-4 font-medium">
           <Link href="/">Plans</Link>
           <Link href="/my-plan">My plan</Link>
         </div>
         <button
-          className="text-sm text-gray-500"
+          className="text-sm muted"
           onClick={async () => {
             await supabase.auth.signOut();
             router.replace("/login");
