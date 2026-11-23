@@ -28,7 +28,7 @@ export const EFFORT: Record<Zone, string> = {
   easy: "Easy, you can hold a conversation",
   tempo: "Comfortably hard",
   interval: "Hard but controlled",
-  race: "Goal race pace",
+  race: "Race effort",
 };
 
 function vdot(timeSec: number, km: number) {

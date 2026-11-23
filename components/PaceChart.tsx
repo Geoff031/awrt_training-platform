@@ -170,7 +170,6 @@ export default function PaceChart({ steps, paces }: { steps: Step[]; paces: Pace
             {ZONE_LABEL[z]}
           </span>
         ))}
-        <span className="ml-auto">Bar width = distance{paces ? ", height = pace (taller is faster)" : ", height = effort"}</span>
       </div>
     </div>
   );

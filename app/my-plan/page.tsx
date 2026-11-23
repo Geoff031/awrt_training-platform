@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Guard from "@/components/Guard";
-import PlanCalendar, { LogStatus } from "@/components/PlanCalendar";
+import PlanCalendar, { LogEntry, LogInput, LogStatus } from "@/components/PlanCalendar";
 import { DISTANCE_KM, Workout, formatDate, formatDuration, formatPace, trainingPaces } from "@/lib/pace";
 
 type UserPlan = {
@@ -12,17 +12,17 @@ type UserPlan = {
   plans: { title: string; goal_distance: string; plan_workouts: Workout[] };
 };
 
-// user plan id -> workout id -> status
-type Logs = Record<string, Record<string, LogStatus>>;
+// user plan id -> workout id -> log
+type Logs = Record<string, Record<string, LogEntry>>;
 
 function PlanSection({
   up,
   logs,
-  onMark,
+  onLog,
 }: {
   up: UserPlan;
-  logs: Record<string, LogStatus>;
-  onMark: (workoutId: string, status: LogStatus | null) => Promise<string | null>;
+  logs: Record<string, LogEntry>;
+  onLog: (workoutId: string, entry: LogInput | null) => Promise<string | null>;
 }) {
   const km = DISTANCE_KM[up.plans.goal_distance];
   const paces = useMemo(
@@ -43,8 +43,9 @@ function PlanSection({
         startDate={up.start_date}
         workouts={up.plans.plan_workouts}
         paces={paces}
+        goalSeconds={up.goal_time_seconds}
         logs={logs}
-        onMark={onMark}
+        onLog={onLog}
       />
     </div>
   );
@@ -65,10 +66,17 @@ export default function MyPlan() {
       if (plans.length > 0) {
         const { data: rows } = await supabase
           .from("workout_logs")
-          .select("user_plan_id,workout_id,status")
+          .select("user_plan_id,workout_id,status,actual_distance_km,actual_time_seconds,source")
           .in("user_plan_id", plans.map((p) => p.id));
         const map: Logs = {};
-        for (const r of rows ?? []) (map[r.user_plan_id] ??= {})[r.workout_id] = r.status as LogStatus;
+        for (const r of rows ?? []) {
+          (map[r.user_plan_id] ??= {})[r.workout_id] = {
+            status: r.status as LogStatus,
+            distance_km: r.actual_distance_km === null ? null : Number(r.actual_distance_km),
+            time_seconds: r.actual_time_seconds,
+            source: r.source,
+          };
+        }
         setLogs(map);
       }
       setItems(plans);
@@ -76,16 +84,24 @@ export default function MyPlan() {
     load();
   }, []);
 
-  async function mark(userPlanId: string, workoutId: string, status: LogStatus | null) {
-    const { error } = status
-      ? await supabase
-          .from("workout_logs")
-          .upsert({ user_plan_id: userPlanId, workout_id: workoutId, status }, { onConflict: "user_plan_id,workout_id" })
+  async function log(userPlanId: string, workoutId: string, input: LogInput | null) {
+    const { error } = input
+      ? await supabase.from("workout_logs").upsert(
+          {
+            user_plan_id: userPlanId,
+            workout_id: workoutId,
+            status: input.status,
+            actual_distance_km: input.distance_km,
+            actual_time_seconds: input.time_seconds,
+            source: "manual",
+          },
+          { onConflict: "user_plan_id,workout_id" }
+        )
       : await supabase.from("workout_logs").delete().eq("user_plan_id", userPlanId).eq("workout_id", workoutId);
     if (error) return error.message;
     setLogs((prev) => {
       const forPlan = { ...(prev[userPlanId] ?? {}) };
-      if (status) forPlan[workoutId] = status;
+      if (input) forPlan[workoutId] = { ...input, source: "manual" };
       else delete forPlan[workoutId];
       return { ...prev, [userPlanId]: forPlan };
     });
@@ -98,7 +114,7 @@ export default function MyPlan() {
       {items === null && <p className="muted">Loading…</p>}
       {items?.length === 0 && <p className="muted">You haven&apos;t started a plan yet. Pick one on the Plans page.</p>}
       {items?.map((up) => (
-        <PlanSection key={up.id} up={up} logs={logs[up.id] ?? {}} onMark={(wid, st) => mark(up.id, wid, st)} />
+        <PlanSection key={up.id} up={up} logs={logs[up.id] ?? {}} onLog={(wid, input) => log(up.id, wid, input)} />
       ))}
     </Guard>
   );

@@ -77,7 +77,10 @@ body {
   text-align: left;
 }
 button.cal-cell:hover { background: var(--panel); }
-.cal-out { border-color: transparent; opacity: 0.35; }
+.cal-plan { background: var(--panel); }
+.cal-out { border-color: transparent; min-height: 2.25rem; opacity: 0.55; }
+.cal-other-month { opacity: 0.25; }
+.cal-weeklabel { background: var(--panel); border-radius: 0.375rem; }
 .cal-done { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
 button.cal-done:hover { background: var(--foreground); opacity: 0.9; }
 .cal-missed { border: 1px dashed var(--foreground); }
@@ -96,4 +99,5 @@ button.cal-done:hover { background: var(--foreground); opacity: 0.9; }
 }
 @media (min-width: 640px) {
   .cal-cell { min-height: 5.5rem; font-size: 0.8125rem; padding: 0.375rem 0.5rem; }
+  .cal-out { min-height: 2.75rem; }
 }
