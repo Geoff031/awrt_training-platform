@@ -1,13 +1,14 @@
+import { parseTokenReply } from "@/lib/garmin-parse";
+
 // Garmin personal API (server only). The key lives in the GARMIN_API_KEY environment
 // variable and is never sent to the browser or logged.
 
-const TOKEN_URL =
-  process.env.GARMIN_TOKEN_URL ??
-  "https://personal.connectapi.garmin.com/personalapitoken-service/personal-api/personal-api-key/token";
+const BASE = process.env.GARMIN_API_BASE ?? "https://personal.connectapi.garmin.com";
+const TOKEN_URL = process.env.GARMIN_TOKEN_URL ?? `${BASE}/personalapitoken-service/personal-api/personal-api-key/token`;
 
 export type TokenResult =
-  | { ok: true; token: string; fields: string[] }
-  | { ok: false; status: number; message: string; fields?: string[] };
+  | { ok: true; token: string; shape: string; fields: string[] }
+  | { ok: false; status: number; message: string; shape?: string; fields?: string[]; length?: number; headers?: string[] };
 
 // Swap the API key for an access token (valid for up to 24 hours).
 export async function getGarminToken(): Promise<TokenResult> {
@@ -30,18 +31,33 @@ export async function getGarminToken(): Promise<TokenResult> {
     return { ok: false, status: res.status, message: `Garmin refused the key (HTTP ${res.status}).` };
   }
 
-  let body: Record<string, unknown> = {};
+  const reply = parseTokenReply(await res.text());
+  if (!reply.token) {
+    return {
+      ok: false,
+      status: res.status,
+      message: "Garmin replied, but no access token could be found in the reply.",
+      shape: reply.shape,
+      fields: reply.fields,
+      length: reply.length,
+      headers: Array.from(res.headers.keys()), // names only, never values
+    };
+  }
+  return { ok: true, token: reply.token, shape: reply.shape, fields: reply.fields };
+}
+
+export type GarminReply = { ok: boolean; status: number; contentType: string; text: string; error?: string };
+
+// Read-only GET against the personal API with an access token.
+export async function garminGet(token: string, path: string): Promise<GarminReply> {
   try {
-    body = await res.json();
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(20000),
+      cache: "no-store",
+    });
+    return { ok: res.ok, status: res.status, contentType: res.headers.get("content-type") ?? "", text: await res.text() };
   } catch {
-    // fall through: no JSON body
+    return { ok: false, status: 0, contentType: "", text: "", error: "Could not reach Garmin (network error or timeout)." };
   }
-  const fields = Object.keys(body);
-  const token = [body.access_token, body.accessToken, body.token, body.AccessToken].find(
-    (v): v is string => typeof v === "string" && v.length > 0
-  );
-  if (!token) {
-    return { ok: false, status: res.status, message: "Garmin replied, but no access token was found in the reply.", fields };
-  }
-  return { ok: true, token, fields };
 }

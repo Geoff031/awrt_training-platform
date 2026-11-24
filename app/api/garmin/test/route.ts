@@ -13,7 +13,9 @@ export async function POST(req: Request) {
 
   const result = await getGarminToken();
   if (!result.ok) {
-    return Response.json({ ok: false, status: result.status, message: result.message, fields: result.fields ?? [] });
+    const { ok, ...details } = result;
+    void ok;
+    return Response.json({ ok: false, ...details });
   }
-  return Response.json({ ok: true, message: "Garmin accepted your key.", fields: result.fields });
+  return Response.json({ ok: true, message: "Garmin accepted your key.", shape: result.shape, fields: result.fields });
 }
