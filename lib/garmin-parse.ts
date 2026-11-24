@@ -108,3 +108,34 @@ export function describeResponse(text: string): Described {
     sample: items.slice(0, 3).map(pickFields),
   };
 }
+
+export type GarminRun = { id: string; date: string; distance_km: number; time_seconds: number; name: string };
+
+// Turn Garmin's activity search reply into plain runs. Distance is in metres and
+// duration in seconds; the date is the local start date. Only running types are kept.
+export function toRuns(text: string): GarminRun[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const runs: GarminRun[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") continue;
+    const a = item as Record<string, unknown>;
+    const typeKey = (a.activityType as { typeKey?: unknown } | undefined)?.typeKey;
+    if (typeof typeKey !== "string" || !/run/i.test(typeKey)) continue;
+    if (typeof a.startTimeLocal !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(a.startTimeLocal)) continue;
+    if (typeof a.distance !== "number" || typeof a.duration !== "number" || a.activityId == null) continue;
+    runs.push({
+      id: String(a.activityId),
+      date: a.startTimeLocal.slice(0, 10),
+      distance_km: Math.round(a.distance) / 1000,
+      time_seconds: Math.round(a.duration),
+      name: typeof a.activityName === "string" ? a.activityName.trim() : "",
+    });
+  }
+  return runs;
+}

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Guard from "@/components/Guard";
-import GarminCard from "@/components/GarminCard";
+import GarminCard, { PlanForSync, SyncImport } from "@/components/GarminCard";
 import PlanCalendar, { LogEntry, LogInput, LogStatus } from "@/components/PlanCalendar";
 import { DISTANCE_KM, Workout, formatDate, formatDuration, formatPace, trainingPaces } from "@/lib/pace";
 
@@ -109,6 +109,41 @@ export default function MyPlan() {
     return null;
   }
 
+  // Runs imported from Garmin: save them as done, with the real distance and time
+  async function importRuns(rows: SyncImport[]) {
+    const { error } = await supabase.from("workout_logs").upsert(
+      rows.map((r) => ({
+        user_plan_id: r.userPlanId,
+        workout_id: r.workoutId,
+        status: "done",
+        actual_distance_km: r.distance_km,
+        actual_time_seconds: r.time_seconds,
+        source: "garmin",
+      })),
+      { onConflict: "user_plan_id,workout_id" }
+    );
+    if (error) return error.message;
+    setLogs((prev) => {
+      const next = { ...prev };
+      for (const r of rows) {
+        next[r.userPlanId] = {
+          ...(next[r.userPlanId] ?? {}),
+          [r.workoutId]: { status: "done", distance_km: r.distance_km, time_seconds: r.time_seconds, source: "garmin" },
+        };
+      }
+      return next;
+    });
+    return null;
+  }
+
+  const forSync: PlanForSync[] = (items ?? []).map((up) => ({
+    id: up.id,
+    title: up.plans.title,
+    start_date: up.start_date,
+    workouts: up.plans.plan_workouts,
+    loggedIds: Object.keys(logs[up.id] ?? {}),
+  }));
+
   return (
     <Guard>
       <h1 className="mb-4 text-2xl font-bold">My plan</h1>
@@ -117,7 +152,7 @@ export default function MyPlan() {
       {items?.map((up) => (
         <PlanSection key={up.id} up={up} logs={logs[up.id] ?? {}} onLog={(wid, input) => log(up.id, wid, input)} />
       ))}
-      <GarminCard />
+      <GarminCard plans={forSync} ready={items !== null} onImport={importRuns} />
     </Guard>
   );
 }
