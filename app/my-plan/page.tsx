@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Guard from "@/components/Guard";
+import GarminCard from "@/components/GarminCard";
 import PlanCalendar, { LogEntry, LogInput, LogStatus } from "@/components/PlanCalendar";
 import { DISTANCE_KM, Workout, formatDate, formatDuration, formatPace, trainingPaces } from "@/lib/pace";
 
@@ -116,6 +117,7 @@ export default function MyPlan() {
       {items?.map((up) => (
         <PlanSection key={up.id} up={up} logs={logs[up.id] ?? {}} onLog={(wid, input) => log(up.id, wid, input)} />
       ))}
+      <GarminCard />
     </Guard>
   );
 }
