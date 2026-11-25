@@ -15,6 +15,7 @@ type Props = {
   goalSeconds: number | null;
   logs: Record<string, LogEntry>; // workout id -> log
   onLog: (workoutId: string, entry: LogInput | null) => Promise<string | null>; // returns an error message, or null
+  extra?: (w: Workout) => React.ReactNode; // optional content under the selected day (e.g. comments)
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -94,7 +95,7 @@ function LogForm({
   );
 }
 
-export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, logs, onLog }: Props) {
+export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, logs, onLog, extra }: Props) {
   const todayISO = toISODate(new Date());
 
   // Every day of the plan, including rest days: date -> workout
@@ -336,6 +337,7 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
               </div>
             </>
           )}
+          {extra && <div className="mt-4 border-t line pt-3">{extra(selW)}</div>}
         </div>
       )}
     </div>

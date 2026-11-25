@@ -35,6 +35,7 @@ export default function Guard({ children }: { children: React.ReactNode }) {
           <Link href="/">Plans</Link>
           <Link href="/my-plan">My plan</Link>
           {coach && <Link href="/coach/new">Build plan</Link>}
+          {coach && <Link href="/coach/messages">Messages</Link>}
         </div>
         <button
           className="text-sm muted"
