@@ -89,8 +89,8 @@ export function formatDuration(sec: number) {
 }
 
 export function zoneForType(type: string): Zone {
-  if (type === "tempo") return "tempo";
-  if (type === "intervals") return "interval";
+  if (type === "tempo" || type === "progression") return "tempo";
+  if (type === "intervals" || type === "hills" || type === "fartlek") return "interval";
   if (type === "race") return "race";
   return "easy";
 }

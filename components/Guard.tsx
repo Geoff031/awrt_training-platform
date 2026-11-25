@@ -8,11 +8,21 @@ import { supabase } from "@/lib/supabase";
 export default function Guard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [coach, setCoach] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) router.replace("/login");
-      else setReady(true);
+      else {
+        setReady(true);
+        // Approved coaches get a link to the plan builder
+        supabase
+          .from("coach_profiles")
+          .select("approved")
+          .eq("user_id", data.session.user.id)
+          .maybeSingle()
+          .then(({ data: c }) => setCoach(Boolean(c?.approved)));
+      }
     });
   }, [router]);
 
@@ -24,6 +34,7 @@ export default function Guard({ children }: { children: React.ReactNode }) {
         <div className="flex gap-4 font-medium">
           <Link href="/">Plans</Link>
           <Link href="/my-plan">My plan</Link>
+          {coach && <Link href="/coach/new">Build plan</Link>}
         </div>
         <button
           className="text-sm muted"
