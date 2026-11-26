@@ -109,7 +109,22 @@ export function describeResponse(text: string): Described {
   };
 }
 
-export type GarminRun = { id: string; date: string; distance_km: number; time_seconds: number; name: string };
+export type GarminRun = {
+  id: string;
+  date: string; // local date, YYYY-MM-DD
+  started: string; // local start, YYYY-MM-DD HH:MM:SS
+  distance_km: number;
+  time_seconds: number;
+  name: string;
+  type: string; // running, trail_running, treadmill_running ...
+  event: string | null; // race, training ...
+  elevation: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  zones: number[] | null; // seconds in heart-rate zones 1 to 5
+};
+
+const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 // Turn Garmin's activity search reply into plain runs. Distance is in metres and
 // duration in seconds; the date is the local start date. Only running types are kept.
@@ -129,12 +144,23 @@ export function toRuns(text: string): GarminRun[] {
     if (typeof typeKey !== "string" || !/run/i.test(typeKey)) continue;
     if (typeof a.startTimeLocal !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(a.startTimeLocal)) continue;
     if (typeof a.distance !== "number" || typeof a.duration !== "number" || a.activityId == null) continue;
+    const z = [1, 2, 3, 4, 5].map((i) => numOrNull(a[`hrTimeInZone_${i}`]));
+    const eventKey = (a.eventType as { typeKey?: unknown } | undefined)?.typeKey;
+    const avg = numOrNull(a.averageHR);
+    const max = numOrNull(a.maxHR);
     runs.push({
       id: String(a.activityId),
       date: a.startTimeLocal.slice(0, 10),
+      started: a.startTimeLocal,
       distance_km: Math.round(a.distance) / 1000,
       time_seconds: Math.round(a.duration),
       name: typeof a.activityName === "string" ? a.activityName.trim() : "",
+      type: typeKey,
+      event: typeof eventKey === "string" ? eventKey : null,
+      elevation: numOrNull(a.elevationGain),
+      avg_hr: avg === null ? null : Math.round(avg),
+      max_hr: max === null ? null : Math.round(max),
+      zones: z.every((v) => v === null) ? null : z.map((v) => Math.round(v ?? 0)),
     });
   }
   return runs;

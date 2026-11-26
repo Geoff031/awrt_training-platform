@@ -1,6 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import WorkoutDetail from "@/components/WorkoutDetail";
+import RunCard from "@/components/RunCard";
+import type { Activity } from "@/lib/activities";
 import { Paces, Workout, formatDate, formatDuration, formatPace, toISODate, workoutDate } from "@/lib/pace";
 
 export type LogStatus = "done" | "skipped";
@@ -16,6 +18,7 @@ type Props = {
   logs: Record<string, LogEntry>; // workout id -> log
   onLog: (workoutId: string, entry: LogInput | null) => Promise<string | null>; // returns an error message, or null
   extra?: (w: Workout) => React.ReactNode; // optional content under the selected day (e.g. comments)
+  runs?: Activity[]; // the runner's saved run history (shown on every day, plan or not)
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -95,7 +98,7 @@ function LogForm({
   );
 }
 
-export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, logs, onLog, extra }: Props) {
+export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, logs, onLog, extra, runs = [] }: Props) {
   const todayISO = toISODate(new Date());
 
   // Every day of the plan, including rest days: date -> workout
@@ -108,10 +111,20 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
   const dates = useMemo(() => Array.from(byDate.keys()).sort(), [byDate]);
   const firstISO = dates[0];
   const lastISO = dates[dates.length - 1];
+  const hasPlan = dates.length > 0;
+
+  // Saved runs by day
+  const runsByDate = useMemo(() => {
+    const m = new Map<string, Activity[]>();
+    for (const r of runs) m.set(r.activity_date, [...(m.get(r.activity_date) ?? []), r]);
+    return m;
+  }, [runs]);
+  const kmOn = (iso: string) => (runsByDate.get(iso) ?? []).reduce((sum, r) => sum + r.distance_km, 0);
+  const fmtKm = (km: number) => (km >= 100 ? String(Math.round(km)) : String(Number(km.toFixed(1))));
 
   // Rolling calendar: opens on the current month, and you can go to any month
   const [month, setMonth] = useState(() => monthStart(new Date()));
-  const [selected, setSelected] = useState<string | null>(() => (byDate.has(todayISO) ? todayISO : null));
+  const [selected, setSelected] = useState<string | null>(() => (byDate.has(todayISO) || runsByDate.has(todayISO) ? todayISO : null));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -164,9 +177,11 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
 
   return (
     <div>
-      <p className="mb-3 text-sm muted">
-        {counts.done} done · {counts.missed} missed · {counts.skipped} skipped · {counts.upcoming} to go
-      </p>
+      {hasPlan && (
+        <p className="mb-3 text-sm muted">
+          {counts.done} done · {counts.missed} missed · {counts.skipped} skipped · {counts.upcoming} to go
+        </p>
+      )}
 
       <div className="mb-2 flex items-center justify-between">
         <button className="btn-ghost" aria-label="Previous month" onClick={() => shiftMonth(-1)}>
@@ -178,7 +193,7 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
             className="text-sm underline"
             onClick={() => {
               setMonth(monthStart(new Date()));
-              if (byDate.has(todayISO)) setSelected(todayISO);
+              if (byDate.has(todayISO) || runsByDate.has(todayISO)) setSelected(todayISO);
             }}
           >
             Today
@@ -189,7 +204,7 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
         </button>
       </div>
 
-      <div className="grid grid-cols-[1.75rem_repeat(7,minmax(0,1fr))] gap-1">
+      <div className="grid grid-cols-[2.5rem_repeat(7,minmax(0,1fr))] gap-1">
         <div className="pb-1 text-center text-xs muted">Wk</div>
         {WEEKDAYS.map((d) => (
           <div key={d} className="pb-1 text-center text-xs muted">
@@ -198,12 +213,23 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
         ))}
         {rows.map((row) => {
           const planWeek = row.map((iso) => byDate.get(iso)).find(Boolean)?.week_number ?? null;
+          // Weekly total: km run (saved runs, plus runs logged by hand) against km planned
+          const ran = row.reduce((sum, iso) => {
+            const w = byDate.get(iso);
+            const manual = w && logs[w.id]?.status === "done" && logs[w.id]?.source === "manual" ? Number(logs[w.id].distance_km ?? 0) : 0;
+            return sum + kmOn(iso) + manual;
+          }, 0);
+          const planned = row.reduce((sum, iso) => sum + Number(byDate.get(iso)?.distance_km ?? 0), 0);
           return [
             <div
               key={row[0] + "-wk"}
-              className={`flex items-center justify-center text-[11px] ${planWeek ? "cal-weeklabel font-semibold" : ""}`}
+              title={planned > 0 ? `Run ${fmtKm(ran)} km of ${fmtKm(planned)} km planned` : ran > 0 ? `Run ${fmtKm(ran)} km` : undefined}
+              className={`flex flex-col items-center justify-center text-center text-[10px] leading-tight ${planWeek ? "cal-weeklabel" : ""}`}
             >
-              {planWeek ? `W${planWeek}` : ""}
+              {planWeek ? <span className="font-semibold">W{planWeek}</span> : null}
+              {ran > 0 || planned > 0 ? (
+                <span className="muted">{planned > 0 ? `${fmtKm(ran)}/${fmtKm(planned)}` : fmtKm(ran)}</span>
+              ) : null}
             </div>,
             ...row.map((iso) => {
               const date = fromISO(iso);
@@ -213,6 +239,22 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
               const w = byDate.get(iso);
               const isToday = iso === todayISO;
               if (!w) {
+                const km = kmOn(iso);
+                if (km > 0) {
+                  return (
+                    <button
+                      key={iso}
+                      type="button"
+                      onClick={() => setSelected(iso)}
+                      aria-pressed={iso === selected}
+                      aria-label={`${formatDate(date)}: ran ${fmtKm(km)} km`}
+                      className={`cal-cell cal-ran ${inMonth ? "" : "cal-other-month"} ${iso === selected ? "cal-selected" : ""}`}
+                    >
+                      <span className={`whitespace-nowrap text-xs ${isToday ? "cal-today" : ""}`}>{day}</span>
+                      <span className="font-medium">{fmtKm(km)} km</span>
+                    </button>
+                  );
+                }
                 return (
                   <div key={iso} className={`cal-cell cal-out ${inMonth ? "" : "cal-other-month"}`}>
                     <span className={`whitespace-nowrap text-xs ${isToday ? "cal-today" : ""}`}>{day}</span>
@@ -244,6 +286,7 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
                       <span className="opacity-70">{w.distance_km ? `${w.distance_km} km` : ""}</span>
                     </>
                   )}
+                  {kmOn(iso) > 0 && <span className="font-semibold">▸ {fmtKm(kmOn(iso))} km</span>}
                 </button>
               );
             }),
@@ -251,9 +294,16 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
         })}
       </div>
 
-      <p className="mt-2 text-xs muted">Shaded = your plan · ✓ Done · ✕ Missed (dashed) · – Skipped · ★ Race day · circled = today</p>
+      <p className="mt-2 text-xs muted">{hasPlan ? "Shaded = your plan · ✓ Done · ✕ Missed (dashed) · – Skipped · ★ Race day · " : ""}▸ = a run you did · Wk column: km run / km planned · circled = today</p>
 
-      {!selW && (
+      {!selW && selected && (runsByDate.get(selected)?.length ?? 0) > 0 && (
+        <div className="panel mt-4 space-y-2 rounded border line p-4">
+          <h3 className="font-semibold">{formatDate(fromISO(selected), true)}</h3>
+          {runsByDate.get(selected)!.map((r) => <RunCard key={r.id} run={r} />)}
+        </div>
+      )}
+
+      {hasPlan && !selW && (
         <p className="mt-4 text-sm muted">
           {todayISO < firstISO
             ? `Your plan starts ${formatDate(fromISO(firstISO), true)}. `
@@ -336,6 +386,12 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
                 {error && <p className="mt-2 text-sm">{error}</p>}
               </div>
             </>
+          )}
+          {(runsByDate.get(selected)?.length ?? 0) > 0 && (
+            <div className="mt-4 space-y-2 border-t line pt-3">
+              <p className="text-sm font-medium">Your run{runsByDate.get(selected)!.length === 1 ? "" : "s"} this day</p>
+              {runsByDate.get(selected)!.map((r) => <RunCard key={r.id} run={r} />)}
+            </div>
           )}
           {extra && <div className="mt-4 border-t line pt-3">{extra(selW)}</div>}
         </div>

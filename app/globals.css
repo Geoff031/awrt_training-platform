@@ -78,6 +78,8 @@ body {
 }
 button.cal-cell:hover { background: var(--panel); }
 .cal-plan { background: var(--panel); }
+.cal-ran { border: 1px solid var(--foreground); }
+button.cal-ran:hover { background: var(--panel); }
 .cal-out { border-color: transparent; min-height: 2.25rem; opacity: 0.55; }
 .cal-other-month { opacity: 0.25; }
 .cal-weeklabel { background: var(--panel); border-radius: 0.375rem; }

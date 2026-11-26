@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { Activity, loadActivities } from "@/lib/activities";
 import Guard from "@/components/Guard";
 import CommentThread, { PlanComment } from "@/components/CommentThread";
 import PlanCalendar, { LogEntry, LogInput, LogStatus } from "@/components/PlanCalendar";
-import { DISTANCE_KM, Workout, formatDate, formatDuration, formatPace, trainingPaces } from "@/lib/pace";
+import { DISTANCE_KM, Workout, formatDate, formatDuration, formatPace, toISODate, trainingPaces } from "@/lib/pace";
 
 type UserPlan = {
   id: string;
@@ -23,6 +25,7 @@ function PlanSection({
   comments,
   onSend,
   onCancel,
+  runs,
 }: {
   up: UserPlan;
   logs: Record<string, LogEntry>;
@@ -30,6 +33,7 @@ function PlanSection({
   comments: PlanComment[];
   onSend: (workoutId: string | null, body: string) => Promise<string | null>;
   onCancel: () => Promise<string | null>;
+  runs: Activity[];
 }) {
   const [confirming, setConfirming] = useState(false);
   const [cancelError, setCancelError] = useState("");
@@ -105,6 +109,7 @@ function PlanSection({
         goalSeconds={up.goal_time_seconds}
         logs={logs}
         onLog={onLog}
+        runs={runs}
         extra={
           hasCoach
             ? (w) => {
@@ -131,6 +136,7 @@ export default function MyPlan() {
   const [items, setItems] = useState<UserPlan[] | null>(null);
   const [logs, setLogs] = useState<Logs>({});
   const [comments, setComments] = useState<PlanComment[]>([]);
+  const [runs, setRuns] = useState<Activity[] | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -165,6 +171,7 @@ export default function MyPlan() {
       setItems(plans);
     }
     load();
+    loadActivities().then(setRuns);
   }, []);
 
   async function log(userPlanId: string, workoutId: string, input: LogInput | null) {
@@ -214,7 +221,15 @@ export default function MyPlan() {
     <Guard>
       <h1 className="mb-4 text-2xl font-bold">My plan</h1>
       {items === null && <p className="muted">Loading…</p>}
-      {items?.length === 0 && <p className="muted">You haven&apos;t started a plan yet. Pick one on the Plans page.</p>}
+      {items?.length === 0 && (
+        <>
+          <p className="mb-4 text-sm muted">
+            You haven&apos;t started a plan yet. <Link href="/" className="underline">Pick one</Link> whenever you&apos;re ready.{" "}
+            {runs !== null && runs.length === 0 ? "No runs saved yet: link a watch on your Profile and sync to see them here." : "Your runs so far:"}
+          </p>
+          <PlanCalendar startDate={toISODate(new Date())} workouts={[]} paces={null} goalSeconds={null} logs={{}} onLog={async () => null} runs={runs ?? []} />
+        </>
+      )}
       {items?.map((up) => (
         <PlanSection
           key={up.id}
@@ -224,6 +239,7 @@ export default function MyPlan() {
           comments={comments.filter((c) => c.user_plan_id === up.id)}
           onSend={(wid, body) => sendComment(up.id, wid, body)}
           onCancel={() => cancelPlan(up.id)}
+          runs={runs ?? []}
         />
       ))}
     </Guard>

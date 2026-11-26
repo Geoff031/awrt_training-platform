@@ -25,7 +25,6 @@ type PreviewResult = { ok: boolean; message?: string; attempts?: Attempt[] };
 type Proposal = { key: string; userPlanId: string; workout: Workout; date: string; run: GarminRun };
 type SyncState = { fetched: number; proposals: Proposal[]; picked: Set<string> };
 
-const SYNC_DAYS = 120; // how far back one sync looks
 
 // Only shown to the account linked to the personal Garmin key.
 export default function GarminCard() {
@@ -37,6 +36,7 @@ export default function GarminCard() {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [sync, setSync] = useState<SyncState | null>(null);
   const [note, setNote] = useState("");
+  const [range, setRange] = useState<"3" | "6" | "12" | "all">("12");
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -107,30 +107,66 @@ export default function GarminCard() {
     setBusy("");
   }
 
-  // Fetch runs from Garmin, match them to plan days, and show the matches to confirm
+  // Fetch runs from Garmin (page by page), save them to the runner's history, then match them to plan days
   async function findRuns() {
     setBusy("sync");
     setSync(null);
     setNote("");
     const today = toISODate(new Date());
-    const earliest = plans.map((p) => p.start_date).sort()[0];
     const floor = new Date();
-    floor.setDate(floor.getDate() - SYNC_DAYS);
-    const from = earliest && earliest > toISODate(floor) ? earliest : toISODate(floor);
+    let from = "2000-01-01";
+    if (range !== "all") {
+      floor.setMonth(floor.getMonth() - Number(range));
+      from = toISODate(floor);
+    }
 
     try {
-      const res = await fetch("/api/garmin/runs", {
-        method: "POST",
-        headers: { ...(await authHeader()), "Content-Type": "application/json" },
-        body: JSON.stringify({ from, to: today }),
-      });
-      const json = await res.json();
-      if (!json.ok) {
-        setNote(json.message ?? "Garmin did not return your runs.");
-        setBusy("");
-        return;
+      const headers = { ...(await authHeader()), "Content-Type": "application/json" };
+      const runs: GarminRun[] = [];
+      for (let page = 0; page < 60; page++) {
+        setNote(`Fetching your runs from Garmin… ${runs.length} so far`);
+        const res = await fetch("/api/garmin/runs", { method: "POST", headers, body: JSON.stringify({ from, to: today, page }) });
+        const json = await res.json();
+        if (!json.ok) {
+          setNote(json.message ?? "Garmin did not return your runs.");
+          setBusy("");
+          return;
+        }
+        runs.push(...(json.runs as GarminRun[]));
+        if (!json.more) break;
       }
-      const runs: GarminRun[] = json.runs;
+
+      // Save every run to the history (safe to repeat: the same run is only stored once)
+      const { data: auth } = await supabase.auth.getSession();
+      const uid = auth.session?.user.id;
+      for (let i = 0; i < runs.length; i += 200) {
+        const { error } = await supabase.from("activities").upsert(
+          runs.slice(i, i + 200).map((r) => ({
+            user_id: uid,
+            source: "garmin",
+            external_id: r.id,
+            activity_date: r.date,
+            started_local: r.started,
+            name: r.name || null,
+            activity_type: r.type,
+            event_type: r.event,
+            distance_km: r.distance_km,
+            duration_seconds: r.time_seconds,
+            elevation_gain_m: r.elevation,
+            avg_hr: r.avg_hr,
+            max_hr: r.max_hr,
+            hr_zone_seconds: r.zones,
+          })),
+          { onConflict: "user_id,source,external_id" },
+        );
+        if (error) {
+          setNote(`Could not save your runs: ${error.message}`);
+          setBusy("");
+          return;
+        }
+      }
+      setNote(`Saved ${runs.length} run${runs.length === 1 ? "" : "s"} to your history.`);
+
       const byId = new Map(runs.map((r) => [r.id, r]));
       const taken = new Set<string>(); // a run is used by one plan day only
       const proposals: Proposal[] = [];
@@ -145,7 +181,7 @@ export default function GarminCard() {
           runs.filter((r) => !taken.has(r.id)),
           planned,
           new Set(p.loggedIds),
-          today
+          today,
         );
         for (const m of matches) {
           taken.add(m.run.id);
@@ -195,9 +231,15 @@ export default function GarminCard() {
     <div className="panel mt-6 rounded border line p-4">
       <h2 className="font-semibold">Garmin</h2>
       <p className="mb-3 text-sm muted">Connected with your personal Garmin key. Only your account can see this.</p>
-      <div className="flex flex-wrap gap-2">
-        <button className="btn" disabled={busy !== "" || !ready || plans.length === 0} onClick={findRuns}>
-          {busy === "sync" ? "Looking…" : "Sync runs from Garmin"}
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="field py-2" value={range} aria-label="How far back to sync" disabled={busy !== ""} onChange={(e) => setRange(e.target.value as "3" | "6" | "12" | "all")}>
+          <option value="3">Last 3 months</option>
+          <option value="6">Last 6 months</option>
+          <option value="12">Last 12 months</option>
+          <option value="all">Full history</option>
+        </select>
+        <button className="btn" disabled={busy !== "" || !ready} onClick={findRuns}>
+          {busy === "sync" ? "Syncing…" : "Sync runs from Garmin"}
         </button>
         <button className="btn-ghost" disabled={busy !== ""} onClick={() => run("test")}>
           {busy === "test" ? "Testing…" : "Test connection"}
@@ -206,17 +248,17 @@ export default function GarminCard() {
           {busy === "preview" ? "Looking…" : "Preview recent activities"}
         </button>
       </div>
-      {ready && plans.length === 0 && <p className="mt-2 text-sm muted">Start a plan first, then sync your runs into it.</p>}
+      {ready && plans.length === 0 && <p className="mt-2 text-sm muted">No active plan: your runs are saved to your history and shown on your calendar.</p>}
 
       {note && <p className="mt-3 text-sm">{note}</p>}
 
       {sync && (
         <div className="mt-4 text-sm">
           <p className="muted">
-            Found {sync.fetched} run{sync.fetched === 1 ? "" : "s"} on Garmin. {sync.proposals.length} match{sync.proposals.length === 1 ? "es" : ""} a plan day that isn&apos;t logged yet.
+            {sync.proposals.length} of your {sync.fetched} run{sync.fetched === 1 ? "" : "s"} match{sync.proposals.length === 1 ? "es" : ""} a plan day that isn&apos;t logged yet.
           </p>
           {sync.proposals.length === 0 ? (
-            <p className="mt-2">Nothing new to import. Runs only match a plan day on the same date, and days you&apos;ve already logged are left alone.</p>
+            <p className="mt-2">{plans.length === 0 ? "Open My plan to see your runs on the calendar." : "No plan days to fill in. Runs only match a plan day on the same date, and days you've already logged are left alone."}</p>
           ) : (
             <>
               <ul className="mt-2 divide-y line rounded border line">
