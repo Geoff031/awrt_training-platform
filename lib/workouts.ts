@@ -1,4 +1,5 @@
 // Plan builder logic: preset workout types, week layouts and volume build. Pure code (no network).
+import { totalKm } from "@/lib/pace";
 import type { Step, Zone } from "@/lib/pace";
 
 export type WorkoutType =
@@ -31,7 +32,7 @@ const SCALE: Record<string, number> = { "5k": 0.8, "10k": 1, half: 1.4, marathon
 export const round1 = (n: number) => Math.round(n * 10) / 10;
 const roundHalf = (n: number) => Math.max(0.5, Math.round(n * 2) / 2);
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
-export const sumKm = (steps: Step[]) => round1(steps.reduce((s, x) => s + x.distance_km, 0));
+export const sumKm = (steps: Step[]) => round1(totalKm(steps));
 
 export function defaultKm(type: WorkoutType, goal: string, goalKm: number) {
   if (type === "rest") return 0;
@@ -79,18 +80,13 @@ export function buildSteps(type: WorkoutType, km: number): Step[] {
     case "fartlek": {
       const rep = type === "intervals" ? 0.8 : type === "hills" ? 0.4 : 1;
       const jog = type === "intervals" ? 0.4 : type === "hills" ? 0.4 : 1;
-      const names = type === "intervals" ? ["Rep", "Jog"] : type === "hills" ? ["Hill rep", "Jog down"] : ["Surge", "Float"];
+      const name = type === "intervals" ? "Rep" : type === "hills" ? "Hill rep" : "Surge";
       if (km < 4) return whole(label(type), "interval");
       const w = warm(), c = cool();
-      const n = clamp(Math.floor((km - w.distance_km - c.distance_km) / (rep + jog)), 1, 10);
-      const steps: Step[] = [w];
-      for (let i = 1; i <= n; i++) {
-        steps.push({ label: `${names[0]} ${i}`, distance_km: rep, zone: "interval" });
-        steps.push({ label: names[1], distance_km: jog, zone: "easy" });
-      }
-      steps.pop(); // no easy jog after the last rep: go straight into the cool-down
-      steps.push(c);
-      return fit(steps, km);
+      // The jog after the last rep is dropped, so reps run straight into the cool-down
+      const n = clamp(Math.floor((km - w.distance_km - c.distance_km + jog) / (rep + jog)), 1, 10);
+      const block: Step = { label: name, distance_km: rep, zone: "interval", reps: n, rest: { kind: "jog", distance_km: jog } };
+      return fit([w, block, c], km);
     }
   }
 }
@@ -99,6 +95,7 @@ export function buildSteps(type: WorkoutType, km: number): Step[] {
 export function scaleSteps(steps: Step[], km: number): Step[] {
   const total = sumKm(steps);
   if (steps.length === 0 || total <= 0) return steps;
+  if (steps.some((s) => s.reps || s.time_sec)) return steps; // set by reps or time: edit the steps instead
   return fit(steps.map((s) => ({ ...s, distance_km: (s.distance_km * km) / total })), km);
 }
 

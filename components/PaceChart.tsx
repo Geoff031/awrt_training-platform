@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Paces, Step, Zone, formatPace } from "@/lib/pace";
+import { Paces, Step, Zone, amountText, expandSteps, formatPace, stepKm, stepPaceSec } from "@/lib/pace";
 
 // Workout chart: bar WIDTH = distance (km), bar HEIGHT = pace (taller = faster).
 // With no goal time there are no paces, so height shows effort instead.
@@ -36,25 +36,29 @@ export default function PaceChart({ steps, paces }: { steps: Step[]; paces: Pace
     return () => ro.disconnect();
   }, []);
 
-  const total = steps.reduce((sum, s) => sum + s.distance_km, 0);
+  // Repeat blocks are drawn rep by rep. Width = distance (timed steps use their pace), height = pace.
+  const flat = expandSteps(steps);
+  const kms = flat.map((s) => stepKm(s, paces));
+  const total = kms.reduce((sum, k) => sum + k, 0);
   if (!total) return null;
 
   const plotW = Math.max(width - L - R, 60);
   const plotH = H - T - B;
   const base = T + plotH;
+  const slowRest = (s: Step) => s.rest_kind === "walk" || s.rest_kind === "stand"; // drawn as a low bar
 
   // Height of each bar as a fraction (0 to 1) of the plot, plus the y-axis ticks
-  let frac: (z: Zone) => number;
+  let frac: (s: Step) => number;
   let ticks: { label: string; frac: number }[];
   if (paces) {
-    const mid = (z: Zone) => (paces[z].low + paces[z].high) / 2;
-    const ps = steps.map((s) => mid(s.zone));
+    const ps = flat.filter((s) => !slowRest(s)).map((s) => stepPaceSec(s, paces));
+    if (ps.length === 0) ps.push(300);
     const minP = Math.min(...ps);
     const maxP = Math.max(...ps);
     const range = Math.max(maxP - minP, 60);
     const fast = minP - 0.25 * range;
     const slow = maxP + 0.6 * range;
-    frac = (z) => (slow - mid(z)) / (slow - fast);
+    frac = (s) => (slowRest(s) ? 0.04 : Math.min(1, Math.max(0.04, (slow - stepPaceSec(s, paces)) / (slow - fast))));
     // Round pace ticks (every 15, 30 or 60 seconds), no more than 5 of them
     const step = [15, 30, 60].find((st) => Math.floor(slow / st) - Math.ceil(fast / st) + 1 <= 5) ?? 60;
     ticks = [];
@@ -62,23 +66,23 @@ export default function PaceChart({ steps, paces }: { steps: Step[]; paces: Pace
       ticks.push({ label: formatPace(p), frac: (slow - p) / (slow - fast) });
     }
   } else {
-    frac = (z) => EFFORT_LEVEL[z];
+    frac = (s) => (slowRest(s) ? 0.1 : EFFORT_LEVEL[s.zone]);
     ticks = EFFORT_TICKS;
   }
 
   // Bars and distance labels along the bottom
   let cum = 0;
-  const bars = steps.map((s) => {
+  const bars = flat.map((s, i) => {
     const x = L + (plotW * cum) / total;
-    const w = (plotW * s.distance_km) / total;
-    cum += s.distance_km;
-    const h = Math.max(frac(s.zone) * plotH, 4);
+    const w = (plotW * kms[i]) / total;
+    cum += kms[i];
+    const h = Math.max(frac(s) * plotH, 4);
     return { s, x: x + 1, w: Math.max(w - 2, 1), y: base - h, h };
   });
 
   const boundaries = [0];
   let c = 0;
-  for (const s of steps) boundaries.push((c += s.distance_km));
+  for (const k of kms) boundaries.push((c += k));
   // Keep distance labels from overlapping: work back from the finish
   const labelled: number[] = [];
   let lastX = Infinity;
@@ -93,10 +97,8 @@ export default function PaceChart({ steps, paces }: { steps: Step[]; paces: Pace
     }
   }
 
-  const zones = Array.from(new Set(steps.map((s) => s.zone)));
-  const summary = steps
-    .map((s) => `${s.label} ${km(s.distance_km)} km${paces ? "" : ""}`)
-    .join(", ");
+  const zones = Array.from(new Set(flat.filter((s) => !s.rest_kind).map((s) => s.zone)));
+  const summary = flat.map((s) => `${s.label} ${amountText(s)}`).join(", ");
 
   return (
     <div>
@@ -130,7 +132,7 @@ export default function PaceChart({ steps, paces }: { steps: Step[]; paces: Pace
               strokeWidth={1}
             >
               <title>
-                {s.label} · {km(s.distance_km)} km · {ZONE_LABEL[s.zone]}
+                {s.label} · {amountText(s)} · {s.rest_kind ? "Rest" : ZONE_LABEL[s.zone]}
               </title>
             </rect>
           ))}

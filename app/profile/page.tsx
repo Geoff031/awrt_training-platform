@@ -9,6 +9,7 @@ export default function Profile() {
   const [name, setName] = useState("");
   const [uid, setUid] = useState("");
   const [note, setNote] = useState("");
+  const [garminOn, setGarminOn] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -19,6 +20,11 @@ export default function Profile() {
       setEmail(user.email ?? "");
       const { data: p } = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
       setName(p?.full_name ?? "");
+      // Garmin is only live for the account holding the personal key for now
+      fetch("/api/garmin/status", { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` } })
+        .then((r) => r.json())
+        .then((j) => setGarminOn(Boolean(j.linked)))
+        .catch(() => setGarminOn(false));
     }
     load();
   }, []);
@@ -43,6 +49,21 @@ export default function Profile() {
           <button className="btn" onClick={save} disabled={!uid}>Save</button>
           {note && <span className="text-sm">{note}</span>}
         </div>
+      </section>
+      <section className="mt-6 rounded border line p-4">
+        <h2 className="mb-2 font-semibold">Connections</h2>
+        <p className="mb-3 text-sm muted">Link a watch or running app and your runs fill in your plan.</p>
+        <ul className="divide-y line text-sm">
+          {[
+            { name: "Garmin", state: garminOn ? "Connected" : "Coming soon" },
+            { name: "Strava", state: "Coming soon" },
+          ].map((c) => (
+            <li key={c.name} className="flex items-center justify-between py-2 line">
+              <span className="font-medium">{c.name}</span>
+              <span className={c.state === "Connected" ? "" : "muted"}>{c.state === "Connected" ? "✓ Connected" : c.state}</span>
+            </li>
+          ))}
+        </ul>
       </section>
       <GarminCard />
     </Guard>

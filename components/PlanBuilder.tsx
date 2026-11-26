@@ -3,9 +3,10 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import PaceChart from "@/components/PaceChart";
-import { DISTANCE_KM, Step, Zone, paceText, plausibleRacePace, trainingPaces } from "@/lib/pace";
+import StepEditor from "@/components/StepEditor";
+import { DISTANCE_KM, Step, plausibleRacePace, trainingPaces } from "@/lib/pace";
 import {
-  Day, PRESETS, WorkoutType, ZONE_NAME, buildSteps, defaultKm, generateWeeks, label, scaleSteps, sumKm, toRow,
+  Day, PRESETS, WorkoutType, buildSteps, defaultKm, generateWeeks, label, scaleSteps, sumKm, toRow,
 } from "@/lib/workouts";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -223,7 +224,8 @@ export default function PlanBuilder() {
                             className="field w-20 py-1"
                             type="number" step={0.5} min={0.5}
                             defaultValue={km}
-                            disabled={d.type === "race"}
+                            disabled={d.type === "race" || d.steps.some((s) => s.reps || s.time_sec)}
+                            title={d.steps.some((s) => s.reps || s.time_sec) ? "Worked out from the steps below" : undefined}
                             aria-label={`${DAY_NAMES[di]} distance km`}
                             onBlur={(e) => { const v = num(e.target.value); if (v && v !== km) setSteps(wk, di, (s) => scaleSteps(s, v)); }}
                             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
@@ -239,28 +241,12 @@ export default function PlanBuilder() {
                     {isOpen && d.type !== "rest" && (
                       <div className="mt-3 space-y-3">
                         <PaceChart steps={d.steps} paces={paces} />
-                        <ul className="space-y-2">
-                          {d.steps.map((s, si) => (
-                            <li key={`${si}-${s.distance_km}-${s.zone}`} className="flex flex-wrap items-center gap-2">
-                              <input className="field min-w-0 basis-full py-1 sm:flex-1 sm:basis-0" defaultValue={s.label} aria-label="Step name"
-                                onBlur={(e) => setSteps(wk, di, (all) => all.map((x, i) => (i === si ? { ...x, label: e.target.value || x.label } : x)))} />
-                              <input className="field w-20 py-1" type="number" step={0.1} min={0.1} defaultValue={s.distance_km} aria-label="Step distance km"
-                                onBlur={(e) => { const v = num(e.target.value); if (v) setSteps(wk, di, (all) => all.map((x, i) => (i === si ? { ...x, distance_km: v } : x))); }}
-                                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
-                              <select className="field py-1" value={s.zone} aria-label="Step pace zone"
-                                onChange={(e) => setSteps(wk, di, (all) => all.map((x, i) => (i === si ? { ...x, zone: e.target.value as Zone } : x)))}>
-                                {(Object.keys(ZONE_NAME) as Zone[]).map((z) => <option key={z} value={z}>{ZONE_NAME[z]}</option>)}
-                              </select>
-                              {paces && <span className="text-xs muted">{paceText(s.zone, paces)}</span>}
-                              <button type="button" className="btn-ghost py-1" disabled={d.steps.length <= 1} aria-label="Remove step"
-                                onClick={() => setSteps(wk, di, (all) => all.filter((_, i) => i !== si))}>✕</button>
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button type="button" className="btn-ghost" onClick={() => setSteps(wk, di, (all) => [...all, { label: "Step", distance_km: 1, zone: "easy" }])}>Add step</button>
-                          <button type="button" className="btn-ghost" onClick={() => editDay(wk, di, (day) => ({ ...day, steps: buildSteps(day.type, km) }))}>Reset to preset</button>
-                        </div>
+                        <StepEditor
+                          steps={d.steps}
+                          paces={paces}
+                          onChange={(next) => setSteps(wk, di, () => next)}
+                          onReset={() => editDay(wk, di, (day) => ({ ...day, steps: buildSteps(day.type, km) }))}
+                        />
                         <input className="field w-full py-1" placeholder={`Note for runner (default: ${label(d.type)} description)`} defaultValue={d.note} aria-label="Note for runner"
                           onBlur={(e) => editDay(wk, di, (day) => ({ ...day, note: e.target.value }))} />
                       </div>

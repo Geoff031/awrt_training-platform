@@ -30,14 +30,14 @@ export default function Guard({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="mx-auto max-w-2xl p-4">
-      <nav className="mb-6 flex items-center justify-between border-b line pb-3">
-        <div className="flex gap-4 font-medium">
+      <nav className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b line pb-3 text-sm [&_a]:whitespace-nowrap [&_button]:whitespace-nowrap">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium">
           <Link href="/">Plans</Link>
           <Link href="/my-plan">My plan</Link>
           {coach && <Link href="/coach/new">Build plan</Link>}
           {coach && <Link href="/coach/messages">Messages</Link>}
         </div>
-        <div className="flex items-center gap-4 text-sm muted">
+        <div className="flex items-center gap-4 muted">
           <Link href="/profile">Profile</Link>
           <button
             onClick={async () => {

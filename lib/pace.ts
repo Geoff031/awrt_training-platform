@@ -9,7 +9,21 @@ export const DISTANCE_KM: Record<string, number> = {
 };
 
 export type Zone = "easy" | "tempo" | "interval" | "race";
-export type Step = { label: string; distance_km: number; zone: Zone };
+// A coach can set a step's pace relative to the runner's goal race pace, or as a fixed pace.
+// With no pace set, the pace comes from the zone (easy, tempo, interval, race).
+export type PaceSpec = { mode: "offset"; offset: number } | { mode: "fixed"; sec: number }; // offset: sec/km, negative = faster than goal pace
+export type RestKind = "jog" | "walk" | "stand";
+export type Rest = { kind: RestKind; distance_km?: number; time_sec?: number };
+export type Step = {
+  label: string;
+  distance_km: number; // for a timed step this is only an estimate
+  zone: Zone;
+  time_sec?: number; // set when the step is prescribed by time, e.g. 3 minutes
+  pace?: PaceSpec;
+  reps?: number; // a repeat block: this step done `reps` times
+  rest?: Rest; // recovery between reps (none after the last rep)
+  rest_kind?: RestKind; // only on the expanded rest steps made by expandSteps
+};
 export type Workout = {
   id: string;
   week_number: number;
@@ -95,6 +109,73 @@ export function zoneForType(type: string): Zone {
   return "easy";
 }
 
+// ---- Steps: repeat blocks, timed steps and per-step paces ----
+
+const NOMINAL: Record<Zone, number> = { easy: 360, tempo: 300, interval: 270, race: 300 }; // sec/km when no goal is known
+
+// Turn repeat blocks into a flat list: rep 1, rest, rep 2, rest ... rep N (no rest after the last rep)
+export function expandSteps(steps: Step[]): Step[] {
+  const out: Step[] = [];
+  for (const s of steps) {
+    const n = Math.max(1, Math.floor(s.reps ?? 1));
+    const { reps: _r, rest, ...single } = s;
+    void _r;
+    if (n === 1) {
+      out.push(single);
+      continue;
+    }
+    for (let i = 1; i <= n; i++) {
+      out.push({ ...single, label: `${s.label} ${i}` });
+      if (i < n && rest) {
+        out.push({
+          label: rest.kind === "jog" ? "Jog" : rest.kind === "walk" ? "Walk" : "Stand",
+          zone: "easy",
+          distance_km: rest.distance_km ?? 0,
+          ...(rest.time_sec ? { time_sec: rest.time_sec } : {}),
+          rest_kind: rest.kind,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// Pace (sec/km) for one expanded step. Without a goal, only fixed paces are known.
+export function stepPaceSec(s: Step, paces: Paces | null): number {
+  if (s.rest_kind === "walk") return 720;
+  if (s.rest_kind === "stand") return 3600;
+  if (s.rest_kind === "jog") return paces ? paces.easy.high : 390;
+  if (s.pace?.mode === "fixed") return s.pace.sec;
+  if (!paces) return NOMINAL[s.zone];
+  if (s.pace?.mode === "offset") return paces.race.low + s.pace.offset; // race.low is the goal race pace
+  return (paces[s.zone].low + paces[s.zone].high) / 2;
+}
+
+// Distance of one expanded step. Timed steps are worked out from the pace.
+export function stepKm(s: Step, paces: Paces | null): number {
+  return s.time_sec ? s.time_sec / stepPaceSec(s, paces) : s.distance_km;
+}
+
+export function totalKm(steps: Step[], paces: Paces | null = null): number {
+  return expandSteps(steps).reduce((sum, s) => sum + stepKm(s, paces), 0);
+}
+
+export const offsetText = (o: number) => (o === 0 ? "goal pace" : `goal pace ${o < 0 ? "−" : "+"}${Math.abs(o)} s/km`);
+
+// The pace to show for a step (empty for rests)
+export function stepPaceText(s: Step, paces: Paces | null): string {
+  if (s.rest_kind) return "";
+  if (s.pace?.mode === "fixed") return `${formatPace(s.pace.sec)} /km`;
+  if (s.pace?.mode === "offset") return paces ? `${formatPace(paces.race.low + s.pace.offset)} /km` : offsetText(s.pace.offset);
+  return paces ? paceText(s.zone, paces) : "";
+}
+
+export const fmtDistance = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${Number(km.toFixed(2))} km`);
+export const fmtTime = (sec: number) => (sec < 60 ? `${sec} s` : sec % 60 === 0 ? `${sec / 60} min` : formatPace(sec));
+export const amountText = (s: Step) => (s.time_sec ? fmtTime(s.time_sec) : fmtDistance(s.distance_km));
+export const restText = (r: Rest) =>
+  `${r.time_sec ? fmtTime(r.time_sec) : r.distance_km ? fmtDistance(r.distance_km) : ""} ${r.kind}`.trim();
+
 // Use the saved steps, or fall back to one step for the whole run
 export function stepsFor(w: Workout): Step[] {
   if (w.steps && w.steps.length > 0) return w.steps;
@@ -103,12 +184,9 @@ export function stepsFor(w: Workout): Step[] {
   return [{ label, distance_km: Number(w.distance_km), zone: zoneForType(w.type) }];
 }
 
-// Estimated time for a run, using the middle of each pace range
+// Estimated time for a run
 export function estimateSeconds(steps: Step[], paces: Paces) {
-  return steps.reduce((sum, s) => {
-    const p = paces[s.zone];
-    return sum + s.distance_km * ((p.low + p.high) / 2);
-  }, 0);
+  return expandSteps(steps).reduce((sum, s) => sum + (s.time_sec ?? s.distance_km * stepPaceSec(s, paces)), 0);
 }
 
 // Dates. Workout date = start date + (week - 1) * 7 + (day - 1)
