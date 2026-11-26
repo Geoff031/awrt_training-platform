@@ -88,6 +88,7 @@ export function buildSteps(type: WorkoutType, km: number): Step[] {
         steps.push({ label: `${names[0]} ${i}`, distance_km: rep, zone: "interval" });
         steps.push({ label: names[1], distance_km: jog, zone: "easy" });
       }
+      steps.pop(); // no easy jog after the last rep: go straight into the cool-down
       steps.push(c);
       return fit(steps, km);
     }

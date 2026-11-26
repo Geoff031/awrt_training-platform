@@ -5,8 +5,8 @@ import { GarminRun } from "@/lib/garmin-parse";
 import { Match, PlannedRun, matchRuns } from "@/lib/garmin-match";
 import { Workout, formatDate, formatDuration, formatPace, toISODate, workoutDate } from "@/lib/pace";
 
-export type PlanForSync = { id: string; title: string; start_date: string; workouts: Workout[]; loggedIds: string[] };
-export type SyncImport = { userPlanId: string; workoutId: string; distance_km: number; time_seconds: number };
+type PlanForSync = { id: string; title: string; start_date: string; workouts: Workout[]; loggedIds: string[] };
+type SyncImport = { userPlanId: string; workoutId: string; distance_km: number; time_seconds: number };
 
 type TestResult = { ok: boolean; message: string; status?: number; shape?: string; fields?: string[]; length?: number; headers?: string[] };
 type Attempt = {
@@ -28,16 +28,10 @@ type SyncState = { fetched: number; proposals: Proposal[]; picked: Set<string> }
 const SYNC_DAYS = 120; // how far back one sync looks
 
 // Only shown to the account linked to the personal Garmin key.
-export default function GarminCard({
-  plans,
-  ready,
-  onImport,
-}: {
-  plans: PlanForSync[];
-  ready: boolean;
-  onImport: (rows: SyncImport[]) => Promise<string | null>;
-}) {
+export default function GarminCard() {
   const [linked, setLinked] = useState(false);
+  const [plans, setPlans] = useState<PlanForSync[]>([]);
+  const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState<"" | "test" | "preview" | "sync" | "import">("");
   const [result, setResult] = useState<TestResult | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -56,6 +50,45 @@ export default function GarminCard({
       .then((j) => setLinked(Boolean(j.linked)))
       .catch(() => setLinked(false));
   }, []);
+
+  // The runner's active plans and what is already logged, so synced runs only fill empty days
+  async function loadPlans() {
+    const { data } = await supabase
+      .from("user_plans")
+      .select("id,start_date,plans(title,plan_workouts(*))")
+      .eq("status", "active")
+      .order("start_date");
+    const rows = (data as unknown as { id: string; start_date: string; plans: { title: string; plan_workouts: Workout[] } }[]) ?? [];
+    const logged: Record<string, string[]> = {};
+    if (rows.length > 0) {
+      const { data: logs } = await supabase.from("workout_logs").select("user_plan_id,workout_id").in("user_plan_id", rows.map((r) => r.id));
+      for (const l of logs ?? []) (logged[l.user_plan_id] ??= []).push(l.workout_id);
+    }
+    setPlans(rows.map((r) => ({ id: r.id, title: r.plans.title, start_date: r.start_date, workouts: r.plans.plan_workouts, loggedIds: logged[r.id] ?? [] })));
+    setReady(true);
+  }
+
+  useEffect(() => {
+    if (linked) loadPlans();
+  }, [linked]);
+
+  // Save the confirmed runs as done, with the real distance and time
+  async function onImport(rows: SyncImport[]) {
+    const { error } = await supabase.from("workout_logs").upsert(
+      rows.map((r) => ({
+        user_plan_id: r.userPlanId,
+        workout_id: r.workoutId,
+        status: "done",
+        actual_distance_km: r.distance_km,
+        actual_time_seconds: r.time_seconds,
+        source: "garmin",
+      })),
+      { onConflict: "user_plan_id,workout_id" }
+    );
+    if (error) return error.message;
+    await loadPlans();
+    return null;
+  }
 
   async function run(kind: "test" | "preview") {
     setBusy(kind);

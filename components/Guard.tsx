@@ -37,15 +37,17 @@ export default function Guard({ children }: { children: React.ReactNode }) {
           {coach && <Link href="/coach/new">Build plan</Link>}
           {coach && <Link href="/coach/messages">Messages</Link>}
         </div>
-        <button
-          className="text-sm muted"
-          onClick={async () => {
-            await supabase.auth.signOut();
-            router.replace("/login");
-          }}
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-4 text-sm muted">
+          <Link href="/profile">Profile</Link>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.replace("/login");
+            }}
+          >
+            Sign out
+          </button>
+        </div>
       </nav>
       {children}
     </div>
