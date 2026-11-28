@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import Logo from "@/components/Logo";
 
 // Wraps a page: sends signed-out visitors to /login and shows the top bar.
 export default function Guard({ children }: { children: React.ReactNode }) {
@@ -31,9 +32,13 @@ export default function Guard({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-2xl p-4">
       <nav className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b line pb-3 text-sm [&_a]:whitespace-nowrap [&_button]:whitespace-nowrap">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 font-medium">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-medium">
+          <Link href="/" aria-label="AWRT home" className="mr-1 flex items-center">
+            <Logo height={24} />
+          </Link>
           <Link href="/">Plans</Link>
           <Link href="/my-plan">My plan</Link>
+          <Link href="/history">History</Link>
           {coach && <Link href="/coach/new">Build plan</Link>}
           {coach && <Link href="/coach/messages">Messages</Link>}
         </div>

@@ -204,13 +204,14 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
         </button>
       </div>
 
-      <div className="grid grid-cols-[2.5rem_repeat(7,minmax(0,1fr))] gap-1">
+      <div className="grid grid-cols-[1.75rem_repeat(7,minmax(0,1fr))_2.5rem] gap-1">
         <div className="pb-1 text-center text-xs muted">Wk</div>
         {WEEKDAYS.map((d) => (
           <div key={d} className="pb-1 text-center text-xs muted">
             {d}
           </div>
         ))}
+        <div className="pb-1 text-center text-xs muted">Km</div>
         {rows.map((row) => {
           const planWeek = row.map((iso) => byDate.get(iso)).find(Boolean)?.week_number ?? null;
           // Weekly total: km run (saved runs, plus runs logged by hand) against km planned
@@ -223,13 +224,9 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
           return [
             <div
               key={row[0] + "-wk"}
-              title={planned > 0 ? `Run ${fmtKm(ran)} km of ${fmtKm(planned)} km planned` : ran > 0 ? `Run ${fmtKm(ran)} km` : undefined}
-              className={`flex flex-col items-center justify-center text-center text-[10px] leading-tight ${planWeek ? "cal-weeklabel" : ""}`}
+              className={`flex items-center justify-center text-[11px] ${planWeek ? "cal-weeklabel font-semibold" : ""}`}
             >
-              {planWeek ? <span className="font-semibold">W{planWeek}</span> : null}
-              {ran > 0 || planned > 0 ? (
-                <span className="muted">{planned > 0 ? `${fmtKm(ran)}/${fmtKm(planned)}` : fmtKm(ran)}</span>
-              ) : null}
+              {planWeek ? `W${planWeek}` : ""}
             </div>,
             ...row.map((iso) => {
               const date = fromISO(iso);
@@ -290,11 +287,19 @@ export default function PlanCalendar({ startDate, workouts, paces, goalSeconds, 
                 </button>
               );
             }),
+            <div
+              key={row[0] + "-km"}
+              title={planned > 0 ? `Run ${fmtKm(ran)} km of ${fmtKm(planned)} km planned` : ran > 0 ? `Run ${fmtKm(ran)} km` : undefined}
+              className="flex flex-col items-center justify-center text-center text-[11px] leading-tight"
+            >
+              {ran > 0 || planned > 0 ? <span className="font-semibold">{fmtKm(ran)}</span> : null}
+              {planned > 0 ? <span className="muted">/{fmtKm(planned)}</span> : null}
+            </div>,
           ];
         })}
       </div>
 
-      <p className="mt-2 text-xs muted">{hasPlan ? "Shaded = your plan · ✓ Done · ✕ Missed (dashed) · – Skipped · ★ Race day · " : ""}▸ = a run you did · Wk column: km run / km planned · circled = today</p>
+      <p className="mt-2 text-xs muted">{hasPlan ? "Shaded = your plan · ✓ Done · ✕ Missed (dashed) · – Skipped · ★ Race day · " : ""}▸ = a run you did · Km column: km run / km planned that week · circled = today</p>
 
       {!selW && selected && (runsByDate.get(selected)?.length ?? 0) > 0 && (
         <div className="panel mt-4 space-y-2 rounded border line p-4">

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Logo from "@/components/Logo";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -43,6 +44,9 @@ export default function Login() {
 
   return (
     <main className="mx-auto max-w-sm p-6">
+      <div className="mb-6 flex justify-center">
+        <Logo variant="stacked" height={96} />
+      </div>
       <h1 className="mb-4 text-2xl font-bold">{mode === "login" ? "Log in" : "Create account"}</h1>
       <form onSubmit={submit} className="space-y-3">
         {mode === "signup" && (

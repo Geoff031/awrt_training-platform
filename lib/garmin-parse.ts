@@ -122,7 +122,10 @@ export type GarminRun = {
   avg_hr: number | null;
   max_hr: number | null;
   zones: number[] | null; // seconds in heart-rate zones 1 to 5
+  splits: Record<string, number> | null; // fastest time (seconds) for 1000, 1609, 5000, 10000, 21098 and 42195 m inside the run
 };
+
+const SPLIT_METRES = [1000, 1609, 5000, 10000, 21098, 42195];
 
 const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
@@ -145,6 +148,11 @@ export function toRuns(text: string): GarminRun[] {
     if (typeof a.startTimeLocal !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(a.startTimeLocal)) continue;
     if (typeof a.distance !== "number" || typeof a.duration !== "number" || a.activityId == null) continue;
     const z = [1, 2, 3, 4, 5].map((i) => numOrNull(a[`hrTimeInZone_${i}`]));
+    const splits: Record<string, number> = {};
+    for (const m of SPLIT_METRES) {
+      const v = numOrNull(a[`fastestSplit_${m}`]);
+      if (v !== null && v > 0) splits[String(m)] = Math.round(v * 10) / 10;
+    }
     const eventKey = (a.eventType as { typeKey?: unknown } | undefined)?.typeKey;
     const avg = numOrNull(a.averageHR);
     const max = numOrNull(a.maxHR);
@@ -161,6 +169,7 @@ export function toRuns(text: string): GarminRun[] {
       avg_hr: avg === null ? null : Math.round(avg),
       max_hr: max === null ? null : Math.round(max),
       zones: z.every((v) => v === null) ? null : z.map((v) => Math.round(v ?? 0)),
+      splits: Object.keys(splits).length > 0 ? splits : null,
     });
   }
   return runs;

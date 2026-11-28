@@ -15,30 +15,38 @@ export type Activity = {
   avg_hr: number | null;
   max_hr: number | null;
   hr_zone_seconds: number[] | null;
+  best_splits: Record<string, number> | null;
 };
 
 const COLUMNS =
   "id,source,activity_date,started_local,name,activity_type,event_type,distance_km,duration_seconds,elevation_gain_m,avg_hr,max_hr,hr_zone_seconds";
+const HISTORY_COLUMNS = "id,activity_date,name,distance_km,duration_seconds,elevation_gain_m,best_splits";
 
-// All of the runner's saved runs, oldest first (read in pages of 1000)
-export async function loadActivities(): Promise<Activity[]> {
-  const out: Activity[] = [];
+async function fetchAll(columns: string) {
+  const out: Record<string, unknown>[] = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("activities")
-      .select(COLUMNS)
+      .select(columns)
       .order("activity_date")
       .order("started_local")
       .range(from, from + 999);
     if (error || !data) break;
     out.push(
-      ...data.map((r) => ({
+      ...(data as unknown as Record<string, unknown>[]).map((r) => ({
         ...r,
         distance_km: Number(r.distance_km),
-        elevation_gain_m: r.elevation_gain_m === null ? null : Number(r.elevation_gain_m),
+        elevation_gain_m: r.elevation_gain_m == null ? null : Number(r.elevation_gain_m),
       })),
     );
     if (data.length < 1000) break;
   }
-  return out as Activity[];
+  return out;
 }
+
+// All of the runner's saved runs, oldest first (read in pages of 1000)
+export const loadActivities = async () => (await fetchAll(COLUMNS)) as unknown as Activity[];
+
+// A lighter read for the History page: only what the totals and records need
+export type HistoryRun = Pick<Activity, "id" | "activity_date" | "name" | "distance_km" | "duration_seconds" | "elevation_gain_m" | "best_splits">;
+export const loadHistoryRuns = async () => (await fetchAll(HISTORY_COLUMNS)) as unknown as HistoryRun[];

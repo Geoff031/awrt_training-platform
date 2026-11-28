@@ -156,6 +156,7 @@ export default function GarminCard() {
             avg_hr: r.avg_hr,
             max_hr: r.max_hr,
             hr_zone_seconds: r.zones,
+            best_splits: r.splits,
           })),
           { onConflict: "user_id,source,external_id" },
         );
